@@ -433,11 +433,11 @@ public Action Say_Hook(int client, const char[] command, int argc)
 		WriteChatLog(client, "say", sText);
 		PrintToServer("%s: %s", szName, sText);
 
-		if (GetConVarBool(g_hPointSystem) && GetConVarBool(g_hColoredNames) && g_bDbCustomTitleInUse[client])
+		if (IsPlayerVip(client, true, false))
+		{
 			setNameColor(szName, g_iCustomColours[client][0], 64);
-
-		if (GetConVarBool(g_hPointSystem) && GetConVarBool(g_hColoredNames) && g_bDbCustomTitleInUse[client] && g_bHasCustomTextColour[client])
 			setTextColor(sText, g_iCustomColours[client][1], 1024);
+		}
 
 		if (GetClientTeam(client) == 1)
 		{
@@ -445,36 +445,23 @@ public Action Say_Hook(int client, const char[] command, int argc)
 			return Plugin_Handled;
 		}
 		else
+			{
+		char szChatRank[1024] = "";
+		if (g_bDbCustomTitleInUse[client])
 		{
-			char szChatRank[1024];
-			Format(szChatRank, 1024, "%s", g_pr_chat_coloredrank[client]);
-			char szChatRankColor[1024];
-			Format(szChatRankColor, 1024, "%s", g_pr_chat_coloredrank[client]);
-			CGetRankColor(szChatRankColor, 1024);
-
-			if (GetConVarBool(g_hPointSystem) && GetConVarBool(g_hColoredNames) && !g_bDbCustomTitleInUse[client])
-				Format(szName, sizeof(szName), "{%s}%s", szChatRankColor, szName);
-
-			if (GetConVarBool(g_hCountry) && (GetConVarBool(g_hPointSystem)))
-			{
-				if (IsPlayerAlive(client))
-					CPrintToChatAll("%t", "Hooks6", g_szCountryCode[client], szChatRank, szName, sText);
-				else
-					CPrintToChatAll("%t", "Hooks7", g_szCountryCode[client], szChatRank, szName, sText);
-				return Plugin_Handled;
-			}
-			else
-			{
-				if (GetConVarBool(g_hPointSystem))
-				{
-					if (IsPlayerAlive(client))
-						CPrintToChatAll("%t", "Hooks8", szChatRank, szName, sText);
-					else
-						CPrintToChatAll("%t", "Hooks9", szChatRank, szName, sText);
-					return Plugin_Handled;
-				}
-			}
+			Format(szChatRank, sizeof(szChatRank), "%c%s {default}| %s {default}- ", LIMEGREEN, g_pr_chat_coloredrank[client], g_szTitle[client]);
+			ReplaceString(szChatRank, sizeof(szChatRank), "{style}", "");
 		}
+
+		if (StrEqual(g_szTitlePlain[client], "")) {
+			Format(szChatRank, sizeof(szChatRank), "%c%s {default}| ", LIMEGREEN, g_pr_chat_coloredrank[client]);
+			ReplaceString(szChatRank, sizeof(szChatRank), "{style}", "");
+		}	
+		
+		CPrintToChatAll("%s{default}%s{grey}: {default}%s", szChatRank, szName, sText);
+		return Plugin_Handled;	
+
+			}
 	}
 	return Plugin_Continue;
 }

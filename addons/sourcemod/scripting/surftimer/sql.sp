@@ -9441,8 +9441,8 @@ public void SQL_UpdatePlayerColoursCallback(Handle owner, Handle hndl, const cha
 		return;
 	}
 
-	g_bUpdatingColours[client] = true;
-	db_viewCustomTitles(client, g_szSteamID[client]);
+	db_refreshCustomTitles(client);
+
 }
 
 // fluffys end custom titles

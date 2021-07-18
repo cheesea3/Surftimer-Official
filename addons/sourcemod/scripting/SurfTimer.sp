@@ -27,6 +27,10 @@
 #include <surftimer>
 #include <autoexecconfig>
 
+
+//vmute
+#include <sourcecomms>
+
 /*===================================
 =            Definitions            =
 ===================================*/
@@ -62,6 +66,11 @@
 #define PINK 0x0E
 #define LIGHTRED 0x0F
 #define ORCHID 0x1A // not sure if this is orchid color in csgo.
+
+// Vip Titles
+#define MAX_TITLE_LENGTH 128
+#define MAX_TITLES 32
+#define MAX_RAWTITLE_LENGTH 1024
 
 // Paths for folders and files
 #define CK_REPLAY_PATH "data/replays/"
@@ -391,6 +400,11 @@ bool g_bVip[MAXPLAYERS + 1];
 bool g_bCheckCustomTitle[MAXPLAYERS + 1];
 bool g_bEnableJoinMsgs;
 char g_szCustomJoinMsg[MAXPLAYERS + 1][256];
+bool g_bLoaded[MAXPLAYERS + 1];
+char g_szCustomTitleRaw[MAXPLAYERS + 1][MAX_RAWTITLE_LENGTH];
+char g_szTitle[MAXPLAYERS + 1][MAX_TITLE_LENGTH];
+char g_szTitlePlain[MAXPLAYERS + 1][MAX_TITLE_LENGTH];
+
 
 // 1 = PB Sound, 2 = Top 10 Sound, 3 = WR sound
 // char g_szCustomSounds[MAXPLAYERS + 1][3][256];
@@ -2071,6 +2085,8 @@ public void OnClientPutInServer(int client)
 
 	// char fix
 	FixPlayerName(client);
+	//update state
+	db_refreshCustomTitles(client);
 
 	if (g_bLateLoaded && IsPlayerAlive(client))
 	{
@@ -2104,6 +2120,7 @@ public void OnClientAuthorized(int client)
 		char s_Country[32], s_clientName[32], s_address[32];
 		GetClientIP(client, s_address, 32);
 		GetClientName(client, s_clientName, 32);
+		g_bLoaded[client] = true;
 		Format(s_Country, 100, "Unknown");
 		GeoipCountry(s_address, s_Country, 100);
 		if (!strcmp(s_Country, NULL_STRING))

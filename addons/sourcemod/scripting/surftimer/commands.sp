@@ -16,6 +16,8 @@ void CreateCommands()
 	RegConsoleCmd("sm_bhop", Client_AutoBhop, "[surftimer] on/off autobhop");
 	RegConsoleCmd("sm_flashlight", Client_Flashlight, "[surftimer] on/off flashlight");
 	RegConsoleCmd("sm_maptop", Client_MapTop, "[surftimer] displays local map top for a given map");
+	RegConsoleCmd("sm_vmute", Command_Vmute, "[ImperfectGamers] [vip] Toggle vmute on a player");
+	
 	RegConsoleCmd("sm_wr", Client_Wr, "[surftimer] prints records wr in chat");
 	RegConsoleCmd("sm_wrb", Client_Wrb, "[surftimer] prints records wrb in chat");
 	RegConsoleCmd("sm_spec", Client_Spec, "[surftimer] chooses a player who you want to spectate and switch you to spectators");
@@ -256,6 +258,50 @@ public Action Command_CenterSpeed(int client, int args) {
 	return Plugin_Handled;
 }
 
+public Action Command_Vmute(int client, int args)
+{
+	if (!IsValidClient(client) || !IsPlayerVip(client))
+		return Plugin_Handled;
+
+	if (args < 1)
+	{
+		CReplyToCommand(client, "Usage: <name> - mutes / unmutes the given player (30 minutes)");
+		return Plugin_Handled;
+	}
+
+	char clientName[MAX_NAME_LENGTH];
+	GetClientName(client, clientName, sizeof(clientName));
+	char reason[128];
+	Format(reason, sizeof(reason), "vmute by %s", clientName);
+
+	char target[128];
+	GetCmdArg(1, target, sizeof(target));
+
+	int targetId = FindTarget(client, target, true, false);
+	if (targetId < 0) {
+			CReplyToCommand(client, "Target player not found");
+			return Plugin_Handled;
+	}
+
+	char targetNamed[128];
+	GetClientName(targetId, targetNamed, sizeof(targetNamed));
+
+	bType isMuted = SourceComms_GetClientMuteType(targetId);
+	if (isMuted == bNot) {
+			SourceComms_SetClientMute(targetId, true, 30, true, reason);
+			CPrintToChatAll("VIP %s muted %s for 30 minutes", clientName, targetNamed);
+	} else if (isMuted == bPerm) {
+			CReplyToCommand(client, "Cannot unmute a permanately muted player using vmute.");
+	} else {
+			SourceComms_SetClientMute(targetId, false, -1, false, reason);
+			CPrintToChatAll("VIP %s unmuted %s temporarily", clientName, targetNamed);
+	}
+
+	return Plugin_Handled;
+}
+
+
+
 public Action Command_ChangeSpeedMode(int client, int args) {
 	if (g_SpeedMode[client] == 0) { 
 		g_SpeedMode[client]++;
@@ -482,20 +528,20 @@ public void CustomTitleMenu(int client)
 	getSteamIDFromClient(client, szSteamID, 32);
 	getColourName(client, szColour[0], 32, g_iCustomColours[client][0]);
 	getColourName(client, szColour[1], 32, g_iCustomColours[client][1]);
-
-	Format(szTitle, 256, "Custom Titles Menu: %s\nCustom Title: %s\n \n", szName, g_szCustomTitle[client]);
-	Format(szItem, 128, "Name Colour: %s", szColour[0]);
-	Format(szItem2, 128, "Text Colour: %s", szColour[1]);
+	if (StrEqual(g_szTitlePlain[client], "")) {
+	Format(szTitle, 256, "Custom Titles Menu: %s\nCustom Title: None\n \n", szName);
+	} else {
+	Format(szTitle, 256, "Custom Titles Menu: %s\nCustom Title: %s\n \n", szName, g_szTitlePlain[client]);
+	}
+	Format(szItem, 128, "Name Colour [VIP]: %s", szColour[0]);
+	Format(szItem2, 128, "Text Colour [VIP]: %s", szColour[1]);
 
 	Menu menu = CreateMenu(CustomTitleMenuHandler);
 	SetMenuTitle(menu, szTitle);
 
-	AddMenuItem(menu, "Name Colour", szItem);
-	AddMenuItem(menu, "Text Colour", szItem2);
-	if (g_bDbCustomTitleInUse[client])
-		AddMenuItem(menu, "disable", "Disable Custom Title");
-	else
-		AddMenuItem(menu, "disable", "Enable Custom Title");
+	AddMenuItem(menu, "name", szItem);
+	AddMenuItem(menu, "text", szItem2);
+	AddMenuItem(menu, "next", "Change Title");
 
 	SetMenuOptionFlags(menu, MENUFLAG_BUTTON_EXIT);
 	DisplayMenu(menu, client, MENU_TIME_FOREVER);
@@ -505,15 +551,243 @@ public int CustomTitleMenuHandler(Handle menu, MenuAction action, int param1, in
 {
 	if (action == MenuAction_Select)
 	{
-		switch (param2)
+	
+	
+		int client = param1;
+		char info[32];
+		GetMenuItem(menu, param2, info, sizeof(info));
+
+		if (StrEqual(info, "name"))
 		{
-			case 0, 1: db_viewPlayerColours(param1, g_szSteamID[param1], param2);
-			case 2: db_toggleCustomPlayerTitle(param1, g_szSteamID[param1]);
+			if (!IsPlayerVip(client))
+				return;
+			g_bUpdatingColours[client] = true;
+			db_viewPlayerColours(param1, g_szSteamID[param1], param2);
+		}
+		else if (StrEqual(info, "text"))
+		{
+			if (!IsPlayerVip(client))
+				return;
+			g_bUpdatingColours[client] = true;				
+			db_viewPlayerColours(param1, g_szSteamID[param1], param2);
+		}
+		else if (StrEqual(info, "next"))
+		{
+			g_bUpdatingColours[client] = true;
+			NextTitle(client, client);
 		}
 	}
 	else if (action == MenuAction_End)
 		delete menu;
 }
+
+bool IsPlayerLoaded(int client)
+{
+	return g_bLoaded[client];
+}
+
+public void NextTitle(int client, int target)
+{
+	if (!IsPlayerLoaded(target))
+	{
+		CReplyToCommand(client, "Player not yet loaded");
+		return;
+	}
+
+	char parts[MAX_TITLES][MAX_TITLE_LENGTH];
+	char newStr[MAX_RAWTITLE_LENGTH];
+	int numParts = ExplodeString(g_szCustomTitleRaw[target], "`", parts, sizeof(parts), sizeof(parts[]));
+	if (numParts >= 1)
+	{
+		for (int attempt = 0; attempt < 10; attempt++)
+		{
+			if (StrEqual(parts[0], "vip")) parts[0] = "mod";
+			else if (StrEqual(parts[0], "mod")) parts[0] = "admin";
+			else if (StrEqual(parts[0], "admin")) parts[0] = "0";
+			else
+			{
+				int num = StringToInt(parts[0]);
+				num++;
+				if (num >= numParts)
+					parts[0] = "vip";
+				else
+					Format(parts[0], sizeof(parts[]), "%d", num);
+			}
+
+			ImplodeStrings(parts, numParts, "`", newStr, sizeof(newStr));
+			char formatted[MAX_TITLE_LENGTH];
+			FormatTitle(target, newStr, formatted, sizeof(formatted));
+			if (StrEqual(parts[0], "0"))
+			{
+				formatted = "<default>";
+			}
+
+			if (!StrEqual(formatted, ""))
+			{
+				SaveRawTitle(target, newStr);
+
+				char out[1024];
+				if (client == target)
+				{
+					Format(out, sizeof(out), "You have changed your title to %s", formatted);
+				}
+				else
+				{
+					char targetNamed[MAX_NAME_LENGTH];
+					GetClientName(target, targetNamed, sizeof(targetNamed));
+					Format(out, sizeof(out), "You have changed the title of %s to %s", targetNamed, formatted);
+				}
+
+				CPrintToChat(client, out);
+				return;
+			}
+		}
+	}
+}
+
+void FormatTitle(int client, char[] raw, char[] out, int size) {
+		char parts[32][32];
+		char colored[32] = "";
+		int numParts = ExplodeString(raw, "`", parts, sizeof(parts), sizeof(parts[]));
+		if (numParts >= 1) {
+				int num = StringToInt(parts[0]);
+				if (num == 0) {
+						if (StrEqual(parts[0], "vip")) {
+								if (IsPlayerVip(client, true, false)) {
+										colored = "{green}VIP";
+								}
+						} else if (StrEqual(parts[0], "admin")) {
+								if (CheckCommandAccess(client, "", ADMFLAG_ROOT)) {
+										colored = "{red}ADMIN";
+								}
+						} else if (StrEqual(parts[0], "mod")) {
+								if (CheckCommandAccess(client, "", ADMFLAG_KICK)) {
+										colored = "{yellow}MOD";
+								}
+						}
+				} else if (num > 0 && num < numParts) {
+						strcopy(colored, sizeof(colored), parts[num]);
+				}
+		}
+		FormatTitleSlug(colored, out, size);
+}
+void FormatTitleSlug(const char[] raw, char[] out, int size) {
+		strcopy(out, size, raw);
+		char rawNoColor[32];
+		strcopy(rawNoColor, sizeof(rawNoColor), raw);
+		String_ToLower(rawNoColor, rawNoColor, sizeof(rawNoColor));
+
+		if (StrEqual(rawNoColor, "rapper")) strcopy(out, size, "{yellow}RAPPER");
+		if (StrEqual(rawNoColor, "beat")) strcopy(out, size, "{yellow}BEATBOXER");
+		if (StrEqual(rawNoColor, "dj")) strcopy(out, size, "{yellow}DJ");
+		ReplaceString(out, size, "{red}", "{lightred}", false);
+		ReplaceString(out, size, "{limegreen}", "{lime}", false);
+		ReplaceString(out, size, "{white}", "{default}", false);
+}
+
+/* IG CUSTOM TITLES */
+
+
+
+public void SaveRawTitle(int client, char[] raw) {
+	char rawEx[MAX_RAWTITLE_LENGTH*2+1];
+	SQL_EscapeString(g_hDb, raw, rawEx, sizeof(rawEx));
+	
+	char sSteamID[32];
+	if (!GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID), true)) {
+			return;
+	}
+
+	char szQuery[MAX_RAWTITLE_LENGTH*4+100];
+	Format(szQuery, sizeof(szQuery), " \
+			INSERT INTO ck_vipadmins \
+			SET steamid='%s', title='%s' \
+			ON DUPLICATE KEY UPDATE title='%s' \
+		", sSteamID, rawEx, rawEx);
+	SQL_TQuery(g_hDb, SaveRawTitle2, szQuery, client);
+}
+
+public void SaveRawTitle2(Handle hDriver, Handle hResult, const char[] error, any client) {
+	PrintToServer("Successfully updated custom title.");
+	db_refreshCustomTitles(client);
+}
+
+void db_refreshCustomTitles(int client) {
+	char sSteamID[32];
+	if (!GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID), true)) {
+			return;
+	}
+	
+	char szQuery[1024] = "SELECT `title`, `namecolour`, `textcolour` FROM ck_vipadmins WHERE steamid = '%s';";
+	
+	Format(szQuery, sizeof(szQuery), szQuery, sSteamID);
+	
+	SQL_TQuery(g_hDb, db_refreshCustomTitlesCb, szQuery, client);
+}
+
+void db_refreshCustomTitlesCb(Handle hDriver, Handle hResult, const char[] error, any client) {
+	if (hResult == null) {
+		LogError("[ImperfectGamers VIP] SQL Error (db_refreshCustomTitlesCb): %s ", error);
+		return;
+	}
+
+	if (SQL_HasResultSet(hResult) && SQL_FetchRow(hResult)) {
+		SQL_FetchString(hResult, 0, g_szCustomTitleRaw[client], sizeof(g_szCustomTitleRaw[]));
+		g_iCustomColours[client][0] = SQL_FetchInt(hResult, 1);
+		g_iCustomColours[client][1] = SQL_FetchInt(hResult, 2);
+	} else {
+		g_szCustomTitleRaw[client] = "";
+		g_iCustomColours[client][0] = 0;
+		g_iCustomColours[client][1] = 0;
+	}
+
+	char formatted[32];
+	FormatTitle(client, g_szCustomTitleRaw[client], formatted, sizeof(formatted));
+
+	if (!StrEqual(formatted, "")) {
+		strcopy(g_szTitle[client], sizeof(g_szTitle[]), formatted);
+		strcopy(g_szTitlePlain[client], sizeof(g_szTitlePlain[]), formatted);
+		RemoveColorsFromString(g_szTitlePlain[client], sizeof(g_szTitlePlain[]));
+		g_bDbCustomTitleInUse[client] = true;
+	} else {
+		g_szTitle[client] = "";
+		g_szTitlePlain[client] = "";
+		g_bDbCustomTitleInUse[client] = false;
+	}
+
+	if (g_bUpdatingColours[client])
+		CustomTitleMenu(client);
+
+	g_bUpdatingColours[client] = false;
+	
+	g_bLoaded[client] = true;
+}
+
+public void RemoveColorsFromString(char[] ParseString, int size)
+{
+	ReplaceString(ParseString, size, "{default}", "", false);
+	ReplaceString(ParseString, size, "{white}", "", false);
+	ReplaceString(ParseString, size, "{darkred}", "", false);
+	ReplaceString(ParseString, size, "{green}", "", false);
+	ReplaceString(ParseString, size, "{lime}", "", false);
+	ReplaceString(ParseString, size, "{blue}", "", false);
+	ReplaceString(ParseString, size, "{lightgreen}", "", false);
+	ReplaceString(ParseString, size, "{red}", "", false);
+	ReplaceString(ParseString, size, "{grey}", "", false);
+	ReplaceString(ParseString, size, "{gray}", "", false);
+	ReplaceString(ParseString, size, "{yellow}", "", false);
+	ReplaceString(ParseString, size, "{lightblue}", "", false);
+	ReplaceString(ParseString, size, "{darkblue}", "", false);
+	ReplaceString(ParseString, size, "{pink}", "", false);
+	ReplaceString(ParseString, size, "{lightred}", "", false);
+	ReplaceString(ParseString, size, "{purple}", "", false);
+	ReplaceString(ParseString, size, "{darkgrey}", "", false);
+	ReplaceString(ParseString, size, "{darkgray}", "", false);
+	ReplaceString(ParseString, size, "{limegreen}", "", false);
+	ReplaceString(ParseString, size, "{orange}", "", false);
+	ReplaceString(ParseString, size, "{olive}", "", false);
+}
+
 
 public Action Command_normalMode(int client, int args)
 {
