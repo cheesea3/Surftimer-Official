@@ -116,7 +116,7 @@ void CreateCommands()
 	RegAdminCmd("sm_fixbot", Admin_FixBot, ADMFLAG_GENERIC, "[surftimer] Toggles replay bots off and on");
 	RegAdminCmd("sm_fixbots", Admin_FixBot, ADMFLAG_GENERIC, "[surftimer] Toggles replay bots off and on");
 	RegAdminCmd("sm_fb", Admin_FixBot, ADMFLAG_GENERIC, "[surftimer] Toggles replay bots off and on");
-	RegConsoleCmd("sm_ve", Command_VoteExtend, "[surftimer] [vip] Vote to extend the map");
+
 	RegConsoleCmd("sm_vip", Command_Vip, "[surftimer] [vip] Displays the VIP menu to client");
 	RegConsoleCmd("sm_mytitle", Command_PlayerTitle, "[surftimer] [vip] Displays a menu to the player showing their custom title and allowing them to change their colours");
 	RegConsoleCmd("sm_title", Command_PlayerTitle, "[surftimer] [vip] Displays a menu to the player showing their custom title and allowing them to change their colours");
@@ -256,46 +256,6 @@ public Action Command_CenterSpeed(int client, int args) {
 		CPrintToChat(client, "%t", "CenterSpeedOn", g_szChatPrefix);
 	}
 	return Plugin_Handled;
-}
-
-public Action Command_VoteExtend(int client, int args)
-{
-	if (!IsValidClient(client) || !IsPlayerVip(client))
-		return Plugin_Handled;
-
-	VoteExtend(client);
-	return Plugin_Handled;
-}
-
-public void VoteExtend(int client)
-{
-	int timeleft;
-	GetMapTimeLeft(timeleft);
-
-	if (timeleft > 300)
-	{
-		CPrintToChat(client, "%t", "Commands4", g_szChatPrefix);
-		return;
-	}
-
-	if (IsVoteInProgress())
-	{
-		CPrintToChat(client, "%t", "Commands5", g_szChatPrefix);
-		return;
-	}
-
-	char szPlayerName[MAX_NAME_LENGTH];
-	GetClientName(client, szPlayerName, MAX_NAME_LENGTH);
-
-	Menu menu = CreateMenu(Handle_VoteMenuExtend);
-	SetMenuTitle(menu, "Extend the map by 10 minutes?");
-	AddMenuItem(menu, "###yes###", "Yes");
-	AddMenuItem(menu, "###no###", "No");
-	SetMenuExitButton(menu, false);
-	VoteMenuToAll(menu, 20);
-	CPrintToChatAll("%t", "VoteStartedBy", g_szChatPrefix, szPlayerName);
-
-	return;
 }
 
 public Action Command_Vmute(int client, int args)
